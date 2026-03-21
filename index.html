@@ -1,0 +1,236 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Pro Trail Dashboard</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+    <script src="https://unpkg.com/@phosphor-icons/web"></script>
+    <style>
+        #map {
+            height: 560px;
+            z-index: 1;
+        }
+
+        input[type=range]::-webkit-slider-thumb {
+            -webkit-appearance: none;
+            height: 20px;
+            width: 20px;
+            border-radius: 50%;
+            background: #10b981;
+            cursor: pointer;
+            margin-top: -8px;
+            box-shadow: 0 0 10px rgba(16, 185, 129, 0.5);
+        }
+
+        input[type=range]::-webkit-slider-runnable-track {
+            width: 100%;
+            height: 4px;
+            cursor: pointer;
+            background: #374151;
+            border-radius: 2px;
+        }
+
+        .checkpoint-marker {
+            background: #f59e0b;
+            border: 2px solid #fff;
+            border-radius: 50%;
+            box-shadow: 0 0 8px rgba(245, 158, 11, 0.8);
+        }
+
+        .leaflet-popup-content-wrapper,
+        .leaflet-popup-tip {
+            background: #111827;
+            color: #f3f4f6;
+            border: 1px solid #374151;
+        }
+
+        .waypoint-card {
+            cursor: pointer;
+            transition: all 0.2s ease;
+        }
+
+        .waypoint-card:hover {
+            transform: translateY(-2px);
+            border-color: #10b981;
+            box-shadow: 0 0 0 1px rgba(16, 185, 129, 0.25);
+        }
+
+        .waypoint-card.active {
+            border-color: #10b981;
+            background: rgba(16, 185, 129, 0.08);
+        }
+
+        .map-layer-toggle {
+            box-shadow: 0 8px 18px rgba(0, 0, 0, 0.35);
+        }
+
+        .collapsible-trigger i {
+            transition: transform 0.2s ease;
+        }
+
+        .is-collapsed .collapsible-trigger i {
+            transform: rotate(-90deg);
+        }
+
+        .logo-shell {
+            display: flex;
+            justify-content: center;
+            margin-bottom: 0.75rem;
+        }
+
+        .logo-shell img {
+            max-height: 64px;
+            width: auto;
+            object-fit: contain;
+        }
+
+        @media (max-width: 1024px) {
+            .mobile-priority {
+                order: -1;
+            }
+
+            #map {
+                height: 430px;
+            }
+        }
+
+        @media (max-width: 767px) {
+            body {
+                padding: 1rem;
+            }
+
+            #map {
+                height: 340px;
+            }
+
+            .mobile-collapsible .collapsible-content {
+                display: none;
+            }
+
+            .mobile-collapsible:not(.is-collapsed) .collapsible-content {
+                display: block;
+            }
+        }
+    </style>
+</head>
+<body class="bg-gray-950 text-gray-100 font-sans antialiased p-4 md:p-8">
+
+    <div class="max-w-7xl mx-auto space-y-6">
+        <header class="flex flex-col md:flex-row justify-between items-start md:items-center gap-4 border-b border-gray-800 pb-6">
+            <div>
+                <h1 class="text-3xl font-extrabold tracking-tight text-white uppercase">
+                    Andaluz MTB Challenge 2026 <span class="text-emerald-500">50K</span>
+                </h1>
+                <p class="text-gray-400 text-sm mt-1">Desarrollado por Matías López Bertram 77178908</p>
+                <p id="dataSourceLabel" class="text-xs text-amber-400 mt-2"></p>
+            </div>
+
+            <div class="flex flex-wrap gap-4 w-full md:w-auto">
+                <div class="bg-gray-900 border border-gray-800 rounded-lg p-3 flex-1 text-center min-w-[120px]">
+                    <p class="text-xs text-gray-500 uppercase tracking-wider">Distancia</p>
+                    <p class="text-xl font-bold text-white">
+                        <span id="statDistance">0.0</span>
+                        <span class="text-sm font-normal text-gray-400">km</span>
+                    </p>
+                </div>
+
+                <div class="bg-gray-900 border border-gray-800 rounded-lg p-3 flex-1 text-center min-w-[120px]">
+                    <p class="text-xs text-gray-500 uppercase tracking-wider">Desnivel +</p>
+                    <p class="text-xl font-bold text-emerald-500">
+                        <span id="statElevation">0</span>
+                        <span class="text-sm font-normal text-gray-400">m</span>
+                    </p>
+                </div>
+
+                <button id="exportGpxBtn" class="bg-emerald-600 hover:bg-emerald-500 transition-colors text-white font-semibold rounded-lg px-6 py-3 flex items-center justify-center gap-2 flex-1 md:flex-none">
+                    <i class="ph ph-download-simple text-xl"></i> Exportar GPX
+                </button>
+            </div>
+        </header>
+
+        <div class="grid grid-cols-1 lg:grid-cols-3 gap-6 items-start">
+            <div class="lg:col-span-2 space-y-6">
+                <div class="bg-gray-900 rounded-xl border border-gray-800 overflow-hidden shadow-2xl relative">
+                    <div class="absolute top-3 right-3 z-[1000]">
+                        <button id="mapThemeToggle" class="map-layer-toggle bg-gray-900/95 hover:bg-gray-800 text-gray-100 border border-gray-700 rounded-lg px-3 py-2 text-xs font-medium flex items-center gap-2">
+                            <span id="mapThemeDot" class="w-2 h-2 rounded-full bg-gray-400"></span>
+                            <span id="mapThemeLabel">Satélite</span>
+                        </button>
+                    </div>
+                    <div id="map" class="w-full"></div>
+                </div>
+
+                <section id="waypointsCard" class="mobile-collapsible bg-gray-900 rounded-xl border border-gray-800 p-4 md:p-5 shadow-2xl">
+                    <button type="button" class="collapsible-trigger w-full flex items-center justify-between gap-3 text-left md:pointer-events-none" data-target="waypointsContent">
+                        <span class="text-sm font-semibold text-gray-300 uppercase tracking-wider flex items-center gap-2">
+                            <i class="ph ph-flag-checkered text-emerald-500 text-lg"></i> Puntos clave
+                        </span>
+                        <i class="ph ph-caret-down text-gray-400 text-lg md:hidden"></i>
+                    </button>
+                    <div id="waypointsContent" class="collapsible-content mt-3 md:mt-4">
+                        <ul id="waypointList" class="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-5 gap-3 text-sm"></ul>
+                    </div>
+                </section>
+            </div>
+
+            <div class="flex flex-col gap-6">
+                <div class="bg-gray-900 rounded-xl border border-gray-800 p-5 shadow-2xl mobile-priority">
+                    <h2 class="text-sm font-semibold text-gray-300 uppercase tracking-wider mb-4">Progreso del recorrido</h2>
+                    <input type="range" id="courseSlicer" min="0" max="100" value="0" class="w-full appearance-none bg-transparent">
+                    <div class="flex justify-between text-xs text-gray-500 mt-2 font-mono">
+                        <span id="distStart">0 km</span>
+                        <span id="distCurrent" class="text-emerald-500 font-bold">0 km</span>
+                        <span id="distEnd">0 km</span>
+                    </div>
+                </div>
+
+                <div class="bg-gray-900 rounded-xl border border-gray-800 p-5 shadow-2xl flex-1 flex flex-col min-h-[365px]">
+                    <h2 class="text-sm font-semibold text-gray-300 uppercase tracking-wider mb-4">Perfil de elevación</h2>
+                    <div class="flex-1 relative w-full h-full">
+                        <canvas id="elevationChart"></canvas>
+                    </div>
+                </div>
+
+                <section id="statusCard" class="mobile-collapsible bg-gray-900 rounded-lg border border-gray-800 p-3.5 md:p-4 shadow-xl">
+                    <button type="button" class="collapsible-trigger w-full flex items-center justify-between gap-2 text-left md:pointer-events-none">
+                        <span class="text-sm font-semibold text-gray-300 uppercase tracking-wider">Estado actual</span>
+                        <i class="ph ph-caret-down text-gray-400 text-lg md:hidden"></i>
+                    </button>
+
+                    <div id="statusContent" class="collapsible-content mt-2.5 md:mt-3">
+                        <div class="grid grid-cols-2 gap-2.5 text-xs md:text-sm">
+                            
+                            <div class="bg-gray-950 border border-gray-800 rounded-md p-2.5">
+                                <p class="text-gray-500 text-[10px] uppercase">Punto</p>
+                                <p id="currentPointName" class="text-white font-semibold leading-tight">Inicio</p>
+                            </div>
+
+                            <div class="bg-gray-950 border border-gray-800 rounded-md p-2.5">
+                                <p class="text-gray-500 text-[10px] uppercase">Altitud</p>
+                                <p id="currentElevation" class="text-white font-semibold leading-tight">0 m</p>
+                            </div>
+
+                            <div class="bg-gray-950 border border-gray-800 rounded-md p-2.5">
+                                <p class="text-gray-500 text-[10px] uppercase">Lat</p>
+                                <p id="currentLat" class="text-white font-semibold leading-tight">-</p>
+                            </div>
+
+                            <div class="bg-gray-950 border border-gray-800 rounded-md p-2.5">
+                                <p class="text-gray-500 text-[10px] uppercase">Lng</p>
+                                <p id="currentLng" class="text-white font-semibold leading-tight">-</p>
+                            </div>
+
+                        </div>
+                    </div>
+                </section>
+            </div>
+        </div>
+    </div>
+
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <script src="app.js"></script>
+</body>
+</html>
